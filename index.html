@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SMART Demo UI</title>
+</head>
+
+<body style="font-family: Arial; padding: 30px">
+
+<h1>SMART on FHIR Demo</h1>
+
+<button onclick="launch()" style="font-size:18px">
+  ▶ Launch Patient App
+</button>
+
+<p id="status"></p>
+
+<script>
+const CLIENT_ID = "smart_-sqZ0_QNOXt5WKmYqLDWEabG_oCbxIJt";
+const FHIR_BASE = "https://api.mock.health/fhir";
+
+let SMART_CONFIG = null;
+
+// ---------------- PKCE helpers ----------------
+function base64url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function verifier() {
+  const arr = new Uint8Array(64);
+  crypto.getRandomValues(arr);
+  return base64url(arr);
+}
+
+async function challenge(v) {
+  const data = new TextEncoder().encode(v);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return base64url(digest);
+}
+
+// ---------------- SMART config ----------------
+async function loadConfig() {
+  if (!SMART_CONFIG) {
+    SMART_CONFIG = await fetch(
+      FHIR_BASE + "/.well-known/smart-configuration"
+    ).then(r => r.json());
+  }
+  return SMART_CONFIG;
+}
+
+// ---------------- MAIN LAUNCH ----------------
+async function launch() {
+
+  document.getElementById("status").innerText =
+    "Loading SMART configuration...";
+
+  const config = await loadConfig();
+
+  const verifierStr = verifier();
+  const challengeStr = await challenge(verifierStr);
+
+  sessionStorage.setItem("pkce_verifier", verifierStr);
+
+  const auth = new URL(config.authorization_endpoint);
+
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("client_id", CLIENT_ID);
+  auth.searchParams.set("scope", "launch patient/*.read openid fhirUser");
+  auth.searchParams.set("redirect_uri", window.location.origin + "/callback.html");
+  auth.searchParams.set("aud", FHIR_BASE);
+  auth.searchParams.set("code_challenge", challengeStr);
+  auth.searchParams.set("code_challenge_method", "S256");
+
+  // IMPORTANT: this triggers EHR launch context
+  auth.searchParams.set("launch", "demo");
+
+  document.getElementById("status").innerText =
+    "Redirecting to login...";
+
+  window.location.href = auth.toString();
+}
+</script>
+
+</body>
+</html>
